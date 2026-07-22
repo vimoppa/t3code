@@ -6,6 +6,23 @@ import { ProviderRuntimeEvent } from "./providerRuntime.ts";
 const decodeRuntimeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
 
 describe("ProviderRuntimeEvent", () => {
+  it("accepts GitHub Copilot SDK raw event sources", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "session.started",
+      eventId: "event-copilot-session",
+      provider: "copilot",
+      createdAt: "2026-07-22T00:00:00.000Z",
+      threadId: "thread-copilot",
+      raw: {
+        source: "copilot.sdk.session-event",
+        payload: { type: "session.start" },
+      },
+      payload: { message: "started" },
+    });
+
+    expect(parsed.raw?.source).toBe("copilot.sdk.session-event");
+  });
+
   it("accepts fork-provided driver kinds as branded slugs", () => {
     const parsed = decodeRuntimeEvent({
       type: "session.started",

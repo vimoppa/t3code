@@ -11,6 +11,7 @@
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -108,6 +109,86 @@ export const makeMigrationLoader = (throughId?: number) =>
  */
 const run = Migrator.make({});
 
+const repairLegacyForkMigrationLedger = Effect.fn("repairLegacyForkMigrationLedger")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const tables = yield* sql<{ readonly name: string }>`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND name = 'effect_sql_migrations'
+  `;
+  if (tables.length === 0) return false;
+
+  const rows = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+    SELECT migration_id, name
+    FROM effect_sql_migrations
+    WHERE migration_id BETWEEN 23 AND 35
+    ORDER BY migration_id
+  `;
+  const expectedHybridSuffix = [
+    [31, "AuthAuthorizationScopes"],
+    [32, "AuthPairingProofKeyThumbprint"],
+    [33, "ProjectionThreadShellArchiveIndexes"],
+    [34, "AuthAuthorizationScopes"],
+    [35, "AuthPairingProofKeyThumbprint"],
+  ] as const;
+  const expectedNativeFork = [
+    [23, "NormalizeLegacyProviderKinds"],
+    [24, "RepairProjectionThreadProposedPlanImplementationColumns"],
+    [25, "ProjectionThreadShellSummary"],
+    [26, "BackfillProjectionThreadShellSummary"],
+    [27, "CleanupInvalidProjectionPendingApprovals"],
+    [28, "CanonicalizeModelSelectionOptions"],
+    [29, "ProviderSessionRuntimeInstanceId"],
+    [30, "ProjectionThreadSessionInstanceId"],
+    [31, "BackfillForkProviderInstanceIds"],
+    [32, "ProjectionThreadDetailOrderingIndexes"],
+    [33, "ProjectionThreadShellArchiveIndexes"],
+    [34, "AuthAuthorizationScopes"],
+    [35, "AuthPairingProofKeyThumbprint"],
+  ] as const;
+  const matches = (
+    actual: ReadonlyArray<{ readonly migration_id: number; readonly name: string }>,
+    expected: ReadonlyArray<readonly [number, string]>,
+  ) =>
+    actual.length === expected.length &&
+    actual.every(
+      (row, index) =>
+        row.migration_id === expected[index]?.[0] && row.name === expected[index]?.[1],
+    );
+  const hybridRows = rows.filter((row) => row.migration_id >= 31);
+  const isHybridLedger = matches(hybridRows, expectedHybridSuffix);
+  const isNativeForkLedger = matches(rows, expectedNativeFork);
+  if (!isHybridLedger && !isNativeForkLedger) return false;
+
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      if (isNativeForkLedger) {
+        yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id >= 23`;
+        yield* sql`
+          INSERT INTO effect_sql_migrations (migration_id, name)
+          VALUES
+            (23, 'ProjectionThreadShellSummary'),
+            (24, 'BackfillProjectionThreadShellSummary'),
+            (25, 'CleanupInvalidProjectionPendingApprovals'),
+            (26, 'CanonicalizeModelSelectionOptions'),
+            (27, 'ProviderSessionRuntimeInstanceId'),
+            (28, 'ProjectionThreadSessionInstanceId'),
+            (29, 'ProjectionThreadDetailOrderingIndexes'),
+            (30, 'ProjectionThreadShellArchiveIndexes'),
+            (31, 'AuthAuthorizationScopes'),
+            (32, 'AuthPairingProofKeyThumbprint')
+        `;
+      } else {
+        yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id >= 33`;
+      }
+    }),
+  );
+  yield* Effect.logWarning(
+    "Repaired legacy fork migration IDs before applying upstream migrations",
+  );
+  return true;
+});
+
 export interface RunMigrationsOptions {
   readonly toMigrationInclusive?: number | undefined;
 }
@@ -125,6 +206,9 @@ export interface RunMigrationsOptions {
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
+  if (toMigrationInclusive === undefined || toMigrationInclusive >= 33) {
+    yield* repairLegacyForkMigrationLedger();
+  }
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0

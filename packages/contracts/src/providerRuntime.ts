@@ -22,6 +22,8 @@ const RuntimeEventRawSource = Schema.Union([
   Schema.Literal("codex.app-server.notification"),
   Schema.Literal("codex.app-server.request"),
   Schema.Literal("codex.eventmsg"),
+  Schema.Literal("copilot.sdk.session-event"),
+  Schema.Literal("copilot.sdk.synthetic"),
   Schema.Literal("claude.sdk.message"),
   Schema.Literal("claude.sdk.permission"),
   Schema.Literal("codex.sdk.thread-event"),
