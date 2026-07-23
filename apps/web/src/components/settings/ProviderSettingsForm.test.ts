@@ -10,6 +10,16 @@ import {
 } from "./ProviderSettingsForm";
 
 describe("ProviderSettingsForm helpers", () => {
+  it("exposes GitHub Copilot as a configurable provider", () => {
+    const copilot = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("copilot")];
+
+    expect(copilot?.label).toBe("GitHub Copilot");
+    expect(deriveProviderSettingsFields(copilot!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "configDir",
+    ]);
+  });
+
   it("derives visible provider config fields from the client definition schema", () => {
     const codex = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("codex")];
 

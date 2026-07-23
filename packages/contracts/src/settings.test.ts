@@ -5,6 +5,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
+  CopilotSettings,
   DEFAULT_SERVER_SETTINGS,
   ServerSettings,
   ServerSettingsPatch,
@@ -15,6 +16,27 @@ const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+const decodeCopilotSettings = Schema.decodeUnknownSync(CopilotSettings);
+
+describe("CopilotSettings", () => {
+  it("uses the bundled CLI when no binary override is configured", () => {
+    expect(decodeCopilotSettings({}).binaryPath).toBe("");
+  });
+
+  it("preserves legacy Copilot settings during server-settings decoding", () => {
+    const decoded = decodeServerSettings({
+      providers: {
+        copilot: {
+          configDir: "~/.copilot-work",
+          customModels: ["auto", "gpt-5"],
+        },
+      },
+    });
+
+    expect(decoded.providers.copilot.configDir).toBe("~/.copilot-work");
+    expect(decoded.providers.copilot.customModels).toEqual(["auto", "gpt-5"]);
+  });
+});
 
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
