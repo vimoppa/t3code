@@ -43,7 +43,7 @@ let
           "--fetch-timeout=300000"
           "--network-concurrency=4"
         ];
-        hash = "sha256-bfZDQjVdT0neQYxmNB8t+XU8mbjVsAtaTi2Vms5pzxw=";
+        hash = "sha256-J2N+3by1YtJ4miZ2SfKX3Ulv9uaLDcqtEmYKPtpLbHo=";
       };
 
       preBuild = ''
