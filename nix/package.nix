@@ -80,7 +80,8 @@ pkgs.t3code.override {
 
             app="$out/Applications/T3 Code (Alpha).app"
             appCopy="$NIX_BUILD_TOP/t3code.app"
-            cp --recursive --dereference --no-preserve=mode "$app" "$appCopy"
+            cp --recursive --dereference "$app" "$appCopy"
+            chmod --recursive u+w "$appCopy"
             rm --recursive "$app"
             mv "$appCopy" "$app"
 
@@ -90,6 +91,7 @@ pkgs.t3code.override {
                 '<string>com.t3tools.t3code</string>'
 
             /usr/bin/codesign --force --deep --sign - "$app"
+            test -x "$app/Contents/MacOS/T3 Code (Alpha)"
           '';
       }
     );
