@@ -1,0 +1,87 @@
+name: Refresh Nix PNPM Hash
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/package.json"
+      - ".github/workflows/nix-pnpm-hash.yml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/**"
+      - "patches/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-pnpm-hash
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    name: Refresh dependency hash
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      changed: ${{ steps.hash.outputs.changed }}
+      hash: ${{ steps.hash.outputs.hash }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Refresh and verify hash
+        id: hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=".#packages.x86_64-linux.t3code.unwrapped.pnpmDeps"
+
+          if output=$(nix build "$target" --no-link 2>&1); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s\n' "$output"
+          hash=$(printf '%s\n' "$output" | awk '$1 == "got:" { print $2 }' | tail -n 1)
+          if [[ ! "$hash" =~ ^sha256-[A-Za-z0-9+/=]+$ ]]; then
+            echo "Nix failed without reporting a replacement PNPM dependency hash" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$hash" > nix/pnpm-deps-hash
+          nix build "$target" --no-link
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+  commit:
+    name: Commit refreshed hash
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Commit refreshed hash
+        env:
+          PNPM_DEPS_HASH: ${{ needs.refresh.outputs.hash }}
+        run: |
+          [[ "$PNPM_DEPS_HASH" =~ ^sha256-[A-Za-z0-9+/=]+$ ]]
+          printf '%s\n' "$PNPM_DEPS_HASH" > nix/pnpm-deps-hash
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add nix/pnpm-deps-hash
+          git commit -m "fix(nix): refresh pnpm dependency hash [skip ci]"
+          git push origin HEAD:main

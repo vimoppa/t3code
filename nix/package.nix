@@ -43,7 +43,7 @@ let
           "--fetch-timeout=300000"
           "--network-concurrency=4"
         ];
-        hash = "sha256-N453xJ0Ago6+ypQEchxzaHhAWY6Lt1vWnZypUwVupsI=";
+        hash = lib.removeSuffix "\n" (builtins.readFile ./pnpm-deps-hash);
       };
 
       preBuild = ''
