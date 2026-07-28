@@ -17,6 +17,7 @@ import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
   buildTurnStartParams,
   hasConfiguredMcpServer,
+  isArchivedThreadResumeError,
   isRecoverableThreadResumeError,
   openCodexThread,
 } from "./CodexSessionRuntime.ts";
@@ -346,6 +347,28 @@ describe("codexSessionAppServerArgs", () => {
 });
 
 describe("isRecoverableThreadResumeError", () => {
+  it("matches archived Codex session resume errors separately", () => {
+    NodeAssert.equal(
+      isArchivedThreadResumeError(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32603,
+          errorMessage:
+            "session 019f4b39-5e16-7661-a5eb-8e482f309226 is archived. Run `codex unarchive 019f4b39-5e16-7661-a5eb-8e482f309226` to unarchive it first.",
+        }),
+      ),
+      true,
+    );
+    NodeAssert.equal(
+      isArchivedThreadResumeError(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32603,
+          errorMessage: "Archived thread metadata could not be decoded",
+        }),
+      ),
+      false,
+    );
+  });
+
   it("matches missing thread errors", () => {
     NodeAssert.equal(
       isRecoverableThreadResumeError(
@@ -393,12 +416,166 @@ describe("isRecoverableThreadResumeError", () => {
 });
 
 describe("openCodexThread", () => {
+  it.effect("unarchives an archived thread before retrying resume", () =>
+    Effect.gen(function* () {
+      type Method = "thread/start" | "thread/resume" | "thread/unarchive";
+      const calls: Array<{ method: Method; payload: unknown }> = [];
+      const resumed = makeThreadOpenResponse("archived-thread");
+      let resumeAttempts = 0;
+      const client = {
+        request: <M extends Method>(
+          method: M,
+          payload: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          calls.push({ method, payload });
+          if (method === "thread/resume" && resumeAttempts++ === 0) {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage:
+                  "session archived-thread is archived. Run `codex unarchive archived-thread` to unarchive it first.",
+              }),
+            );
+          }
+          return Effect.succeed(resumed as CodexRpc.ClientRequestResponsesByMethod[M]);
+        },
+      };
+
+      const opened = yield* openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: undefined,
+        resumeThreadId: "archived-thread",
+      });
+
+      NodeAssert.equal(opened.thread.id, "archived-thread");
+      NodeAssert.deepStrictEqual(
+        calls.map((call) => call.method),
+        ["thread/resume", "thread/unarchive", "thread/resume"],
+      );
+      NodeAssert.deepStrictEqual(calls[1]?.payload, {
+        threadId: "archived-thread",
+      });
+      NodeAssert.ok(calls[0]);
+      NodeAssert.ok(calls[2]);
+      NodeAssert.equal(
+        (calls[0].payload as { readonly threadId?: string }).threadId,
+        "archived-thread",
+      );
+      NodeAssert.equal(
+        (calls[2].payload as { readonly threadId?: string }).threadId,
+        "archived-thread",
+      );
+    }),
+  );
+
+  it.effect("propagates an unarchive failure instead of starting a new thread", () =>
+    Effect.gen(function* () {
+      type Method = "thread/start" | "thread/resume" | "thread/unarchive";
+      const calls: Array<Method> = [];
+      const client = {
+        request: <M extends Method>(
+          method: M,
+          _payload: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          calls.push(method);
+          if (method === "thread/resume") {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "thread archived-thread is archived",
+              }),
+            );
+          }
+          if (method === "thread/unarchive") {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "thread not found while unarchiving archived-thread",
+              }),
+            );
+          }
+          return Effect.succeed(
+            makeThreadOpenResponse("fresh-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
+          );
+        },
+      };
+
+      const error = yield* openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: undefined,
+        resumeThreadId: "archived-thread",
+      }).pipe(Effect.flip);
+
+      NodeAssert.ok(isCodexAppServerRequestError(error));
+      NodeAssert.equal(error.errorMessage, "thread not found while unarchiving archived-thread");
+      NodeAssert.deepStrictEqual(calls, ["thread/resume", "thread/unarchive"]);
+    }),
+  );
+
+  it.effect("propagates a failed resume retry after unarchiving", () =>
+    Effect.gen(function* () {
+      type Method = "thread/start" | "thread/resume" | "thread/unarchive";
+      const calls: Array<Method> = [];
+      let resumeAttempts = 0;
+      const client = {
+        request: <M extends Method>(
+          method: M,
+          _payload: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          calls.push(method);
+          if (method === "thread/resume" && resumeAttempts++ === 0) {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "thread archived-thread is archived",
+              }),
+            );
+          }
+          if (method === "thread/resume") {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "thread not found while retrying archived-thread",
+              }),
+            );
+          }
+          return Effect.succeed(
+            makeThreadOpenResponse("archived-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
+          );
+        },
+      };
+
+      const error = yield* openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: undefined,
+        resumeThreadId: "archived-thread",
+      }).pipe(Effect.flip);
+
+      NodeAssert.ok(isCodexAppServerRequestError(error));
+      NodeAssert.equal(error.errorMessage, "thread not found while retrying archived-thread");
+      NodeAssert.deepStrictEqual(calls, ["thread/resume", "thread/unarchive", "thread/resume"]);
+    }),
+  );
+
   it.effect("falls back to thread/start when resume fails recoverably", () =>
     Effect.gen(function* () {
-      const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
+      type Method = "thread/start" | "thread/resume" | "thread/unarchive";
+      const calls: Array<{ method: Method; payload: unknown }> = [];
       const started = makeThreadOpenResponse("fresh-thread");
       const client = {
-        request: <M extends "thread/start" | "thread/resume">(
+        request: <M extends Method>(
           method: M,
           payload: CodexRpc.ClientRequestParamsByMethod[M],
         ) => {
@@ -435,8 +612,9 @@ describe("openCodexThread", () => {
 
   it.effect("propagates non-recoverable resume failures", () =>
     Effect.gen(function* () {
+      type Method = "thread/start" | "thread/resume" | "thread/unarchive";
       const client = {
-        request: <M extends "thread/start" | "thread/resume">(
+        request: <M extends Method>(
           method: M,
           _payload: CodexRpc.ClientRequestParamsByMethod[M],
         ) => {
