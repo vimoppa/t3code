@@ -59,6 +59,7 @@ const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
   "unknown thread",
   "does not exist",
 ];
+const ARCHIVED_THREAD_RESUME_ERROR_REGEX = /\b(?:session|thread)\s+\S+\s+is archived\b/i;
 
 export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | undefined): boolean {
   return appServerArgs?.some((argument) => argument.includes("mcp_servers.")) === true;
@@ -441,11 +442,16 @@ export function isRecoverableThreadResumeError(error: unknown): boolean {
   return RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS.some((snippet) => message.includes(snippet));
 }
 
+export function isArchivedThreadResumeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return ARCHIVED_THREAD_RESUME_ERROR_REGEX.test(message);
+}
+
 type CodexThreadOpenResponse =
   | CodexRpc.ClientRequestResponsesByMethod["thread/start"]
   | CodexRpc.ClientRequestResponsesByMethod["thread/resume"];
 
-type CodexThreadOpenMethod = "thread/start" | "thread/resume";
+type CodexThreadOpenMethod = "thread/start" | "thread/resume" | "thread/unarchive";
 
 interface CodexThreadOpenClient {
   readonly request: <M extends CodexThreadOpenMethod>(
@@ -475,22 +481,46 @@ export const openCodexThread = (input: {
     return input.client.request("thread/start", startParams);
   }
 
-  return input.client
-    .request("thread/resume", {
+  const resumeThread = () =>
+    input.client.request("thread/resume", {
       threadId: resumeThreadId,
       ...startParams,
-    })
-    .pipe(
-      Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+    });
+
+  return resumeThread().pipe(
+    Effect.catch((error) => {
+      if (isArchivedThreadResumeError(error)) {
+        return Effect.gen(function* () {
+          yield* Effect.logWarning(
+            "codex app-server thread resume is unarchiving the persisted session",
+            {
+              threadId: input.threadId,
+              requestedRuntimeMode: input.runtimeMode,
+              resumeThreadId,
+              recoverable: true,
+              cause: error,
+            },
+          );
+          yield* input.client.request("thread/unarchive", {
+            threadId: resumeThreadId,
+          });
+          return yield* resumeThread();
+        });
+      }
+
+      if (isRecoverableThreadResumeError(error)) {
+        return Effect.logWarning("codex app-server thread resume fell back to fresh start", {
           threadId: input.threadId,
           requestedRuntimeMode: input.runtimeMode,
           resumeThreadId,
           recoverable: true,
           cause: error,
-        }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
-      ),
-    );
+        }).pipe(Effect.andThen(input.client.request("thread/start", startParams)));
+      }
+
+      return Effect.fail(error);
+    }),
+  );
 };
 
 function readNotificationThreadId(notification: CodexServerNotification): string | undefined {
