@@ -37,6 +37,7 @@ layer("legacy fork migration ledger repair", (it) => {
         { migration_id: 31, name: "AuthAuthorizationScopes" },
         { migration_id: 32, name: "AuthPairingProofKeyThumbprint" },
         { migration_id: 33, name: "ProjectionThreadsSettled" },
+        { migration_id: 34, name: "ProjectionThreadsSnoozed" },
       ]);
 
       const columns = yield* sql<{ readonly name: string }>`
@@ -98,6 +99,7 @@ layer("legacy fork migration ledger repair", (it) => {
         { migration_id: 31, name: "AuthAuthorizationScopes" },
         { migration_id: 32, name: "AuthPairingProofKeyThumbprint" },
         { migration_id: 33, name: "ProjectionThreadsSettled" },
+        { migration_id: 34, name: "ProjectionThreadsSnoozed" },
       ]);
     }),
   );
