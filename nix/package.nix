@@ -28,6 +28,8 @@ let
     finalAttrs: previousAttrs: {
       src = appSource;
       version = "${sourceVersion}-main.${shortRev}";
+      # nixpkgs' postPatch targets its pinned source and must not follow our moving source.
+      postPatch = "";
 
       pnpmDeps = pkgs.fetchPnpmDeps {
         inherit pnpm;
