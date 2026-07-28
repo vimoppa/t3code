@@ -37,6 +37,13 @@ layer("legacy fork migration ledger repair", (it) => {
         { migration_id: 31, name: "AuthAuthorizationScopes" },
         { migration_id: 32, name: "AuthPairingProofKeyThumbprint" },
         { migration_id: 33, name: "ProjectionThreadsSettled" },
+        { migration_id: 34, name: "ProjectionThreadsSnoozed" },
+        { migration_id: 35, name: "ProjectionThreadTitleRegeneration" },
+        { migration_id: 36, name: "ProjectionThreadsPinned" },
+        { migration_id: 37, name: "ProjectionTurnsKeysetIndex" },
+        { migration_id: 38, name: "ProjectionThreadsPinOrderKey" },
+        { migration_id: 39, name: "ProjectionProjectsDefaultThreadEnvMode" },
+        { migration_id: 40, name: "ProjectionProjectFaviconPath" },
       ]);
 
       const columns = yield* sql<{ readonly name: string }>`
@@ -98,6 +105,13 @@ layer("legacy fork migration ledger repair", (it) => {
         { migration_id: 31, name: "AuthAuthorizationScopes" },
         { migration_id: 32, name: "AuthPairingProofKeyThumbprint" },
         { migration_id: 33, name: "ProjectionThreadsSettled" },
+        { migration_id: 34, name: "ProjectionThreadsSnoozed" },
+        { migration_id: 35, name: "ProjectionThreadTitleRegeneration" },
+        { migration_id: 36, name: "ProjectionThreadsPinned" },
+        { migration_id: 37, name: "ProjectionTurnsKeysetIndex" },
+        { migration_id: 38, name: "ProjectionThreadsPinOrderKey" },
+        { migration_id: 39, name: "ProjectionProjectsDefaultThreadEnvMode" },
+        { migration_id: 40, name: "ProjectionProjectFaviconPath" },
       ]);
     }),
   );
