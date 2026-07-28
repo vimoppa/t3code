@@ -311,13 +311,13 @@ export function approvalDecisionToPermissionResult(
 ): PermissionRequestResult {
   switch (decision) {
     case "accept":
-      return { kind: "approved" };
+      return { kind: "approve-once" };
     case "acceptForSession":
       return { kind: "approve-for-session" };
     case "decline":
     case "cancel":
     default:
-      return { kind: "denied-interactively-by-user" };
+      return { kind: "reject" };
   }
 }
 
@@ -1092,7 +1092,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
   ) => {
     const onPermissionRequest = (request: PermissionRequest) =>
       getRuntimeMode() === "full-access"
-        ? Promise.resolve<PermissionRequestResult>({ kind: "approved" })
+        ? Promise.resolve(approvalDecisionToPermissionResult("accept"))
         : new Promise<PermissionRequestResult>((resolve) => {
             const requestId = `copilot-approval-${NodeCrypto.randomUUID()}`;
             const turnId = getCurrentTurnId();
@@ -1377,7 +1377,7 @@ export const makeCopilotAdapter = Effect.fn("makeCopilotAdapter")(function* (
       }),
     ]);
     for (const pending of record.pendingApprovalResolvers.values()) {
-      pending.resolve({ kind: "denied-interactively-by-user" });
+      pending.resolve(approvalDecisionToPermissionResult("cancel"));
     }
     record.pendingApprovalResolvers.clear();
     for (const pending of record.pendingUserInputResolvers.values()) {
