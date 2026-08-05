@@ -24,7 +24,7 @@ let
       hash = "sha256-YgtmBepPYvxWptCphzP0eQcdAyHgPkhrUix+mnRhdDE=";
     };
   });
-  unwrapped = (pkgs.t3code.unwrapped.override { pnpm_10 = pnpm; }).overrideAttrs (
+  unwrapped = (pkgs.t3code.unwrapped.override { pnpm_11 = pnpm; }).overrideAttrs (
     finalAttrs: previousAttrs: {
       src = appSource;
       version = "${sourceVersion}-main.${shortRev}";
