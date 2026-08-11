@@ -21,6 +21,18 @@ it("preserves session-wide approvals", () => {
   });
 });
 
+it("uses the Copilot SDK 1.x permission decision contract", () => {
+  NodeAssert.deepEqual(approvalDecisionToPermissionResult("accept"), {
+    kind: "approve-once",
+  });
+  NodeAssert.deepEqual(approvalDecisionToPermissionResult("decline"), {
+    kind: "reject",
+  });
+  NodeAssert.deepEqual(approvalDecisionToPermissionResult("cancel"), {
+    kind: "reject",
+  });
+});
+
 it("identifies assistant events emitted by subagents", () => {
   NodeAssert.equal(
     isSubagentAssistantEvent({ type: "assistant.message", agentId: "agent-1" } as never),
